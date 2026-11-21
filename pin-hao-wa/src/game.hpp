@@ -1,0 +1,58 @@
+// Game state shared by the logic (main.cpp) and the drawing (scene.hpp).
+#pragma once
+#include <stdint.h>
+
+namespace game {
+
+static constexpr int COLS = 3;
+static constexpr int ROWS = 4;
+static constexpr int MAX_TIER = 3;
+
+enum Phase : uint8_t { IDLE, DROP, POP, CELEBRATE, OVER };
+
+struct State {
+  uint8_t grid[COLS][ROWS];   // 0 = empty, 1..3 = level; row 0 is the bottom
+  int cursor;                 // column the next baby will drop into
+  uint8_t next;               // level of the next baby
+  uint32_t score, best;
+
+  Phase phase;
+  uint32_t phaseStart;        // ms
+  uint32_t phaseLen;          // ms
+
+  // DROP: a baby falling into (col, row)
+  int dropCol, dropRow;
+  uint8_t dropTier;
+
+  // POP: the merged baby growing at (col, row)
+  int popCol, popRow;
+
+  // "轻松绷住" toast after a mismatch
+  uint32_t toastStart, toastUntil;
+
+  // floating "+N"
+  int gain;
+  int gainCol, gainRow;
+  uint32_t gainUntil;
+};
+
+inline int height(const State& s, int c) {
+  int h = 0;
+  while (h < ROWS && s.grid[c][h]) ++h;
+  return h;
+}
+
+inline void reset(State& s, uint32_t best) {
+  for (auto& col : s.grid) for (auto& v : col) v = 0;
+  s.cursor = 1;
+  s.next = 1;
+  s.score = 0;
+  s.best = best;
+  s.phase = IDLE;
+  s.phaseStart = s.phaseLen = 0;
+  s.toastStart = s.toastUntil = 0;
+  s.gain = 0;
+  s.gainUntil = 0;
+}
+
+}  // namespace game
