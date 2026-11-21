@@ -35,13 +35,13 @@ struct State {
   int gainCol, gainRow;
   uint32_t gainUntil;
 
-  bool tutorial;              // show the controls until the first drop
   int fullCol;                // column that refused a drop (it shakes)
   uint32_t fullUntil;
   int combo;                  // merges in a row from one drop
   uint32_t comboUntil;
   bool recordShown;           // "新纪录!" shown once per game
   uint32_t recordUntil;
+  bool cleared;               // celebration came from a shake: "通关!", the whole board clears after it
 };
 
 inline bool boardFull(const State& s) {
@@ -67,13 +67,13 @@ inline void reset(State& s, uint32_t best) {
   s.toastStart = s.toastUntil = 0;
   s.gain = 0;
   s.gainUntil = 0;
-  s.tutorial = true;
   s.fullCol = -1;
   s.fullUntil = 0;
   s.combo = 0;
   s.comboUntil = 0;
   s.recordShown = false;
   s.recordUntil = 0;
+  s.cleared = false;
 }
 
 }  // namespace game

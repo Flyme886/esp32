@@ -76,11 +76,12 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
       static const uint32_t cols[] = {0xF2A93B, 0x5A6FB8, 0xF08A8A, 0x7CC6A8, 0xF7CB3E};
       d->fillSmoothRoundRect((int)x, (int)y, 4, 6, 2, C(cols[i % 5]));
     }
-    pill(d, 22, 12, 91, 22, ACCENT, 0xFFFFFF, "拼好蛙!");
+    pill(d, 22, 12, 91, 22, ACCENT, 0xFFFFFF, g.cleared ? "通关!" : "拼好蛙!");
     float bounce = 1.0f + 0.06f * sinf(t * 9.0f);
     float zin = t < 0.35f ? easeOutBack(t / 0.35f) : 1.0f;
     gBig->pushRotateZoom(d, W / 2.0f, 118, sinf(t * 7.0f) * 4.0f, zin * bounce, zin * bounce, (uint16_t)WA_KEY);
-    snprintf(buf, sizeof(buf), "+10   得分 %lu", (unsigned long)g.score);
+    if (g.cleared) snprintf(buf, sizeof(buf), "得分 %lu", (unsigned long)g.score);
+    else snprintf(buf, sizeof(buf), "+10   得分 %lu", (unsigned long)g.score);
     pill(d, 12, 186, 111, 20, CARD, INK, buf);
     d->setTextColor(C(INK_SOFT));
     d->setTextDatum(textdatum_t::middle_center);
@@ -176,15 +177,6 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
   if (now < g.comboUntil && g.combo >= 2) {
     snprintf(buf, sizeof(buf), "连击 x%d", g.combo);
     pill(d, W / 2 - 34, 90, 68, 20, 0xE07B1F, 0xFFFFFF, buf);
-  }
-
-  // first-time hint
-  if (g.tutorial && g.phase == game::IDLE) {
-    d->fillSmoothRoundRect(8, 120, W - 16, 42, 12, C(CARD));
-    d->setTextColor(C(INK));
-    d->setTextDatum(textdatum_t::middle_center);
-    d->drawString("侧键 换列", W / 2, 132);
-    d->drawString("正键 下落", W / 2, 150);
   }
 
   // new best score

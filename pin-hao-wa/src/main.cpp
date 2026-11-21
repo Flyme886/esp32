@@ -4,6 +4,8 @@
 //   Front button (BtnA) click : drop the baby
 //   Front button hold 3 s     : start over
 //
+// Shake the stick (three quick jolts) to clear the board straight away: "通关!".
+//
 // Small helps: the lane turns green and the landing spot gets a green frame when the
 // next baby would merge there; a full column shakes instead of ending the game (only a
 // completely full board ends it); chains show "连击"; a new best shows "新纪录!";
@@ -33,6 +35,9 @@ static constexpr uint32_t LAUGH_REPEATS = 12;    // loops queued at once (about 
 static constexpr int      LEVEL2_CHANCE = 15;    // % chance the next baby is already level 2
 static constexpr uint32_t DIM_AFTER_MS  = 30000; // dim the screen when nobody plays
 static constexpr uint8_t  BRIGHT        = 150, DIM = 20;
+static constexpr float    SHAKE_G       = 1.9f;  // one jolt of a shake
+static constexpr int      SHAKE_COUNT   = 3;     // jolts needed ...
+static constexpr uint32_t SHAKE_WINDOW  = 900;   // ... within this many ms
 
 static M5Canvas canvas(&M5.Display);
 static Preferences prefs;
@@ -78,6 +83,44 @@ static void addScore(int n, int col, int row) {
   g.gain = n; g.gainCol = col; g.gainRow = row; g.gainUntil = millis() + 700;
 }
 
+static void startLaugh() {
+  // repeat inside the speaker driver so the loop has no gap; stopped when the player continues
+  M5.Speaker.playRaw(laugh_pcm, sizeof(laugh_pcm) / sizeof(laugh_pcm[0]), LAUGH_RATE, false, LAUGH_REPEATS, LAUGH_CH, true);
+}
+
+// shake to win: celebrate now, the whole board clears afterwards
+static void shakeClear() {
+  g.cleared = true;
+  g.toastUntil = 0;
+  startPhase(game::CELEBRATE, CELEBRATE_MAX);
+  sndPop(3);
+  startLaugh();
+  Serial.println("[shake] 通关");
+}
+
+// count quick jolts; returns true when the stick was shaken
+static bool shaken(uint32_t now) {
+  static uint32_t jolts[SHAKE_COUNT] = {0};
+  static int idx = 0;
+  static bool above = false;
+  if (!M5.Imu.update()) return false;
+  auto d = M5.Imu.getImuData();
+  float a = sqrtf(d.accel.x * d.accel.x + d.accel.y * d.accel.y + d.accel.z * d.accel.z);
+  bool hit = a > SHAKE_G;
+  if (hit && !above) {                       // rising edge = one jolt
+    jolts[idx] = now;
+    idx = (idx + 1) % SHAKE_COUNT;
+    uint32_t oldest = jolts[idx];            // the jolt SHAKE_COUNT-1 jolts ago
+    if (oldest && now - oldest < SHAKE_WINDOW) {
+      for (auto& j : jolts) j = 0;
+      above = hit;
+      return true;
+    }
+  }
+  above = hit;
+  return false;
+}
+
 static void restart() {
   game::reset(g, prefs.getUInt("best", 0));
   newNext();
@@ -101,7 +144,6 @@ static void drop() {
     }
     return;
   }
-  g.tutorial = false;
   g.combo = 0;
   g.dropCol = c; g.dropRow = h; g.dropTier = g.next;
   startPhase(game::DROP, DROP_MS_ROW * (game::ROWS - h) + 60);
@@ -116,8 +158,8 @@ static void checkChain() {
     celebrateCol = c; celebrateRow = r;
     addScore(10, c, r);
     startPhase(game::CELEBRATE, CELEBRATE_MAX);
-    // repeat inside the speaker driver so the loop has no gap; stopped when the player continues
-    M5.Speaker.playRaw(laugh_pcm, sizeof(laugh_pcm) / sizeof(laugh_pcm[0]), LAUGH_RATE, false, LAUGH_REPEATS, LAUGH_CH, true);
+    g.cleared = false;
+    startLaugh();
     Serial.println("[level 3] laugh");
     return;
   }
@@ -162,7 +204,7 @@ static void land() {
 void setup() {
   auto cfg = M5.config();
   cfg.serial_baudrate = 115200;
-  cfg.internal_imu = false;
+  cfg.internal_imu = true;
   cfg.internal_spk = true;
   cfg.internal_mic = false;
   M5.begin(cfg);
@@ -210,8 +252,12 @@ void loop() {
   if (M5.BtnA.pressedFor(3000) && holdArmed) { holdArmed = false; restart(); }
   if (M5.BtnA.wasReleased()) holdArmed = true;
 
+  bool shake = shaken(now);
+  if (shake) lastInput = now;
+
   switch (g.phase) {
     case game::IDLE:
+      if (shake) { shakeClear(); break; }
       if (M5.BtnB.wasClicked()) { g.cursor = (g.cursor + 1) % game::COLS; sndMove(); }
       if (M5.BtnA.wasClicked()) drop();
       break;
@@ -226,7 +272,12 @@ void loop() {
       bool done = (pressed && now - g.phaseStart > 800) || now - g.phaseStart > g.phaseLen;
       if (done) {
         M5.Speaker.stop(LAUGH_CH);
-        g.grid[celebrateCol][celebrateRow] = 0;      // the level-3 baby leaves the board
+        if (g.cleared) {                              // shake win: fresh board, score kept
+          for (auto& col : g.grid) for (auto& v : col) v = 0;
+          g.cleared = false;
+        } else {
+          g.grid[celebrateCol][celebrateRow] = 0;     // the level-3 baby leaves the board
+        }
         startPhase(game::IDLE, 0);
       } else if (!M5.Speaker.isPlaying(LAUGH_CH)) {  // loop the laugh
         M5.Speaker.playRaw(laugh_pcm, sizeof(laugh_pcm) / sizeof(laugh_pcm[0]), LAUGH_RATE, false, LAUGH_REPEATS, LAUGH_CH, false);
