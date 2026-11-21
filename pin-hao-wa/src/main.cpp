@@ -15,6 +15,7 @@
 #include "scene.hpp"
 
 #include "assets/laugh.h"            // the laugh, cut from seconds 1-4 of the video
+#include "assets/oops_sound.h"       // "轻松绷住", cut from seconds 3-4 of the second video
 
 static constexpr uint8_t  VOLUME        = 180;   // keep below ~75 % on battery
 static constexpr uint32_t DROP_MS_ROW   = 75;    // fall time per row
@@ -22,6 +23,7 @@ static constexpr uint32_t POP_MS        = 320;
 static constexpr uint32_t TOAST_MS      = 1600;
 static constexpr uint32_t CELEBRATE_MAX = 20000; // stop the laugh loop after 20 s if nobody presses
 static constexpr int      LAUGH_CH      = 1;
+static constexpr int      OOPS_CH       = 2;
 static constexpr uint32_t LAUGH_REPEATS = 12;    // loops queued at once (about 28 s of a 2.3 s laugh)
 static constexpr int      LEVEL2_CHANCE = 15;    // % chance the next baby is already level 2
 
@@ -44,7 +46,9 @@ static void melody(std::initializer_list<std::pair<uint16_t, uint16_t>> m, uint3
 static void sndMove()  { melody({{1568, 25}}); }
 static void sndDrop()  { melody({{880, 30}}); }
 static void sndPop(int tier) { if (tier >= 3) melody({{1046, 60}, {1318, 60}, {1568, 60}, {2093, 120}}); else melody({{1318, 60}, {1760, 90}}); }
-static void sndOops()  { melody({{523, 90}, {392, 90}, {330, 160}}); }   // 轻松绷住
+static void sndOops() {   // 轻松绷住
+  M5.Speaker.playRaw(oops_pcm, sizeof(oops_pcm) / sizeof(oops_pcm[0]), OOPS_RATE, false, 1, OOPS_CH, true);
+}
 static void sndOver()  { melody({{392, 150}, {330, 150}, {262, 300}}); }
 
 static void startPhase(game::Phase p, uint32_t len) {
