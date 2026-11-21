@@ -133,7 +133,13 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
         float p = (now - g.phaseStart) / (float)g.phaseLen;
         z = 0.45f + 0.55f * easeOutBack(p > 1 ? 1 : p);
       }
-      icon(d, t, colX(c), rowY(r), z * 0.95f, 0);
+      float zy = z;
+      if (now < g.wakeUntil) {                       // waking up: a big stretch
+        float p = (now - g.wakeStart) / (float)(g.wakeUntil - g.wakeStart);
+        zy = z * (1.0f + 0.25f * sinf(p * 3.1416f));
+        z  = z * (1.0f - 0.10f * sinf(p * 3.1416f));
+      }
+      gIcon[t - 1]->pushRotateZoom(d, colX(c), rowY(r), 0, z * 0.95f, zy * 0.95f, (uint16_t)WA_KEY);
     }
   }
 
@@ -172,6 +178,45 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
     d->setTextDatum(textdatum_t::middle_center);
     d->drawString(buf, colX(g.gainCol), rowY(g.gainRow) - 24 - (int)(p * 14));
   }
+
+  // blown away: the troublemaker spins up and out, with wind lines
+  if (now < g.blowUntil) {
+    float p = (now - g.blowStart) / (float)(g.blowUntil - g.blowStart);
+    float x = colX(g.blowCol) + p * 40.0f * (g.blowCol == 2 ? -1 : 1);
+    float y = rowY(g.blowRow) - p * p * 220.0f;
+    icon(d, g.blowTier, x, y, 0.95f * (1.0f - 0.5f * p), p * 540.0f);
+    for (int i = 0; i < 4; ++i) {
+      int lx = colX(g.blowCol) - 18 + i * 12, ly = rowY(g.blowRow) + 10 - (int)(p * 60) - (i % 2) * 8;
+      d->drawFastVLine(lx, ly, 14, C(0x9CCFE8));
+    }
+    pill(d, W / 2 - 22, 96, 44, 20, CARD, 0x2F6FA0, "咻~");
+  }
+
+  // the mic is listening: a small hint that grows while someone blows
+  if (g.listening && g.phase == game::IDLE && now >= g.blowUntil) {
+    int w = 34 + (int)(g.micLevel * 18);
+    uint32_t bg = g.micLevel > 0.05f ? 0xCFE8F7 : CARD;
+    pill(d, W - w - 3, 26, w, 15, bg, 0x2F6FA0, "吹走");
+  }
+
+  // falling asleep
+  if (g.sleepyStart) {
+    float t = (now - g.sleepyStart) / 1000.0f;
+    d->setTextColor(C(0x3A4F9A));
+    d->setTextDatum(textdatum_t::middle_center);
+    for (int i = 0; i < 3; ++i) {
+      float ph = t * 1.2f - i * 0.25f;
+      if (ph < 0) continue;
+      if (i == 0) d->setFont(&fonts::efontCN_14);
+      else if (i == 1) d->setFont(&fonts::efontCN_16);
+      else d->setFont(&fonts::efontCN_24);
+      d->drawString("Z", W / 2 - 16 + i * 16, 140 - (int)(ph * 30) - i * 18);
+    }
+    d->setFont(&fonts::efontCN_12);
+  }
+
+  // waking up
+  if (now < g.wakeUntil) pill(d, W / 2 - 30, 96, 60, 20, CARD, INK, "醒啦~");
 
   // chain merges
   if (now < g.comboUntil && g.combo >= 2) {

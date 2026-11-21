@@ -46,6 +46,17 @@ struct State {
   bool recordShown;           // "新纪录!" shown once per game
   uint32_t recordUntil;
   bool cleared;               // celebration came from a shake: "通关!", the whole board clears after it
+
+  // blow on the mic: a troublemaker flies away
+  bool listening;             // mic is on (a troublemaker is on the board and nothing is playing)
+  float micLevel;             // 0..1, how hard someone is blowing right now
+  uint32_t blowStart, blowUntil;
+  int blowCol, blowRow;
+  uint8_t blowTier;
+
+  // face-down sleep
+  uint32_t sleepyStart;       // "Zzz" before the screen goes dark (0 = not falling asleep)
+  uint32_t wakeStart, wakeUntil;
 };
 
 inline bool boardFull(const State& s) {
@@ -58,6 +69,29 @@ inline int height(const State& s, int c) {
   int h = 0;
   while (h < ROWS && s.grid[c][h]) ++h;
   return h;
+}
+
+// the troublemaker to blow away: the highest one on the board (fewest babies above it)
+inline bool findBlock(const State& s, int& col, int& row) {
+  int best = -1;
+  for (int c = 0; c < COLS; ++c) {
+    for (int r = ROWS - 1; r >= 0; --r) {
+      if (isBlock(s.grid[c][r])) {
+        int above = 0;
+        while (r + 1 + above < ROWS && s.grid[c][r + 1 + above]) ++above;
+        int score = 100 - above * 10 + r;
+        if (score > best) { best = score; col = c; row = r; }
+        break;
+      }
+    }
+  }
+  return best >= 0;
+}
+
+// remove (c, r) and let everything above it slide down
+inline void removeAt(State& s, int c, int r) {
+  for (int i = r; i < ROWS - 1; ++i) s.grid[c][i] = s.grid[c][i + 1];
+  s.grid[c][ROWS - 1] = 0;
 }
 
 inline void reset(State& s, uint32_t best) {
@@ -78,6 +112,13 @@ inline void reset(State& s, uint32_t best) {
   s.recordShown = false;
   s.recordUntil = 0;
   s.cleared = false;
+  s.listening = false;
+  s.micLevel = 0;
+  s.blowStart = s.blowUntil = 0;
+  s.blowCol = s.blowRow = 0;
+  s.blowTier = 0;
+  s.sleepyStart = 0;
+  s.wakeStart = s.wakeUntil = 0;
 }
 
 }  // namespace game
