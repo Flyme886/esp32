@@ -5,16 +5,8 @@
 #include <math.h>
 #include "game.hpp"
 
-// Your own pictures (made by tools/build_assets.py, kept out of git) or drawn placeholders.
-#if __has_include("assets/sprites_user.h")
-#include "assets/sprites_user.h"
-#define HAS_USER_SPRITES 1
-#else
-#define HAS_USER_SPRITES 0
-#define WA_ICON 40
-#define WA_BIG 120
-#define WA_KEY 0xF81F
-#endif
+// Pictures from assets/source, converted by tools/build_assets.py
+#include "assets/sprites.h"
 
 namespace scene {
 
@@ -25,40 +17,14 @@ static const uint32_t ACCENT = 0xF2A93B, BLUE = 0x5A6FB8;
 
 static LGFX_Sprite* gIcon[3];
 static LGFX_Sprite* gBig;
-
-// ---- placeholder art (plain numbered faces, used only when your pictures were not converted) ----
-static void drawPlaceholder(LGFX_Sprite* s, int tier, int size) {
-  s->fillScreen(WA_KEY);   // no anti-aliasing here: soft edges would blend with the key colour
-  static const uint32_t col[3] = {0x8CCB8A, 0xF6B26B, 0xF28DA6};
-  int c = size / 2, r = size * 9 / 20;
-  s->fillCircle(c, c, r, C(col[tier - 1]));
-  int e = size / 10;
-  if (tier < 3) {
-    s->fillCircle(c - size / 6, c - size / 10, e, C(0x3A2A1A));
-    s->fillCircle(c + size / 6, c - size / 10, e, C(0x3A2A1A));
-    s->drawArc(c, c + size / 20, size / 7, size / 7 - 2, 30, 150, C(0x3A2A1A));
-  } else {
-    s->drawArc(c - size / 6, c - size / 8, e + 1, e - 1, 200, 340, C(0x3A2A1A));
-    s->drawArc(c + size / 6, c - size / 8, e + 1, e - 1, 200, 340, C(0x3A2A1A));
-    s->fillArc(c, c + size / 20, size / 5, 0, 0, 180, C(0x3A2A1A));
-  }
-  if (size > 60) s->setFont(&fonts::Font4); else s->setFont(&fonts::Font0);
-  s->setTextColor(C(0xFFFFFF));
-  s->setTextDatum(textdatum_t::bottom_center);
-  char n[2] = {(char)('0' + tier), 0};
-  s->drawString(n, c, size - 1);
-}
+static LGFX_Sprite* gOops;
 
 inline void init(LovyanGFX* parent) {
   for (int i = 0; i < 3; ++i) {
     auto* s = new LGFX_Sprite(parent);
     s->setColorDepth(16);
     s->createSprite(WA_ICON, WA_ICON);
-#if HAS_USER_SPRITES
     s->pushImage(0, 0, WA_ICON, WA_ICON, (const lgfx::rgb565_t*)wa_icons[i]);
-#else
-    drawPlaceholder(s, i + 1, WA_ICON);
-#endif
     s->setPivot(WA_ICON / 2.0f, WA_ICON / 2.0f);
     gIcon[i] = s;
   }
@@ -66,12 +32,14 @@ inline void init(LovyanGFX* parent) {
   gBig->setColorDepth(16);
   gBig->setPsram(true);
   gBig->createSprite(WA_BIG, WA_BIG);
-#if HAS_USER_SPRITES
   gBig->pushImage(0, 0, WA_BIG, WA_BIG, (const lgfx::rgb565_t*)wa_big_3);
-#else
-  drawPlaceholder(gBig, 3, WA_BIG);
-#endif
   gBig->setPivot(WA_BIG / 2.0f, WA_BIG / 2.0f);
+  gOops = new LGFX_Sprite(parent);
+  gOops->setColorDepth(16);
+  gOops->setPsram(true);
+  gOops->createSprite(WA_OOPS, WA_OOPS);
+  gOops->pushImage(0, 0, WA_OOPS, WA_OOPS, (const lgfx::rgb565_t*)wa_oops);
+  gOops->setPivot(WA_OOPS / 2.0f, WA_OOPS / 2.0f);
 }
 
 // ---- layout ----
@@ -182,11 +150,13 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
     d->drawString(buf, colX(g.gainCol), rowY(g.gainRow) - 24 - (int)(p * 14));
   }
 
-  // "轻松绷住" toast with a little shake
+  // "轻松绷住": the bear pops up (the picture already carries the words) with a little shake
   if (now < g.toastUntil) {
     float age = (now - g.toastStart) / 1000.0f;
-    int dx = age < 0.4f ? (int)(sinf(age * 60.0f) * 4 * (1 - age / 0.4f)) : 0;
-    pill(d, 18 + dx, 118, 99, 26, 0x6B4A1E, 0xFFFFFF, "轻松绷住");
+    float zin = age < 0.25f ? easeOutBack(age / 0.25f) : 1.0f;
+    float shake = age < 0.5f ? sinf(age * 55.0f) * 5.0f * (1 - age / 0.5f) : 0.0f;
+    d->fillSmoothRoundRect(W / 2 - 60, 140 - 60, 120, 120, 16, C(CARD));
+    gOops->pushRotateZoom(d, W / 2.0f, 140, shake, zin, zin, (uint16_t)WA_KEY);
   }
 
   if (g.phase == game::OVER) {

@@ -1,8 +1,3 @@
 .pio/
 .vscode/
-# your own pictures and sound stay on your computer
-assets/local/*
-!assets/local/README.md
-src/assets/sprites_user.h
-src/assets/laugh_user.h
 __pycache__/

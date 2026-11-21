@@ -5,7 +5,7 @@
 //   Front button hold 3 s     : start over
 //
 // Drop a baby onto the same baby and they merge into the next level.
-// Drop it onto a different one and you get "轻松绷住".
+// Drop it onto a different one and 熊大 pops up: "轻松绷住".
 // Reaching level 3 fills the screen with the big laugh and loops the laugh sound
 // until you press a button.
 
@@ -14,16 +14,12 @@
 #include "game.hpp"
 #include "scene.hpp"
 
-#if __has_include("assets/laugh_user.h")
-#include "assets/laugh_user.h"       // your laugh, cut from the video (kept out of git)
-#else
-#include "assets/laugh_default.h"    // synthesised fallback
-#endif
+#include "assets/laugh.h"            // the laugh, cut from seconds 1-4 of the video
 
 static constexpr uint8_t  VOLUME        = 180;   // keep below ~75 % on battery
 static constexpr uint32_t DROP_MS_ROW   = 75;    // fall time per row
 static constexpr uint32_t POP_MS        = 320;
-static constexpr uint32_t TOAST_MS      = 1300;
+static constexpr uint32_t TOAST_MS      = 1600;
 static constexpr uint32_t CELEBRATE_MAX = 20000; // stop the laugh loop after 20 s if nobody presses
 static constexpr int      LAUGH_CH      = 1;
 static constexpr uint32_t LAUGH_REPEATS = 12;    // loops queued at once (about 28 s of a 2.3 s laugh)
@@ -153,7 +149,7 @@ void setup() {
   prefs.begin("pinhaowa", false);
   randomSeed(esp_random());
   restart();
-  Serial.printf("拼好蛙 ready. pictures: %s\n", HAS_USER_SPRITES ? "yours" : "placeholders");
+  Serial.println("拼好蛙 ready");
 }
 
 void loop() {
