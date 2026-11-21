@@ -37,7 +37,7 @@ struct State {
   uint8_t soundSet; // 0 = tomato recordings, 1 = tobacco recordings
 };
 
-enum Bubble : uint8_t { BUBBLE_NONE, BUBBLE_DRY, BUBBLE_CUT, BUBBLE_WATER, BUBBLE_INFO };
+enum Bubble : uint8_t { BUBBLE_NONE, BUBBLE_DRY, BUBBLE_CUT, BUBBLE_WATER, BUBBLE_INFO, BUBBLE_REMIND };
 
 struct Fx {
   uint32_t now;            // ms
@@ -49,7 +49,21 @@ struct Fx {
   uint32_t waterUntil;     // droplets after watering
   const int16_t* lastClip; // waveform shown at the bottom
   uint16_t lastLen;
+  uint32_t primeStart;     // build-up animation before a click sound
+  uint32_t primeUntil;
+  bool primeCut;           // build-up for a "cut" click (after a knock)
+  uint32_t remindUntil;    // water reminder animation
+  bool remindUrgent;       // plant is wilting
 };
+
+// blend two colours, t = 0 -> a, t = 1 -> b
+static inline uint32_t mix(uint32_t a, uint32_t b, float t) {
+  if (t < 0) t = 0; if (t > 1) t = 1;
+  int r = (int)(((a >> 16) & 0xFF) * (1 - t) + ((b >> 16) & 0xFF) * t);
+  int g = (int)(((a >> 8) & 0xFF) * (1 - t) + ((b >> 8) & 0xFF) * t);
+  int bl = (int)((a & 0xFF) * (1 - t) + (b & 0xFF) * t);
+  return (uint32_t)(r << 16 | g << 8 | bl);
+}
 
 static const char* kStageNames[5] = {"卷芽", "展叶", "两扇", "三扇", "成丛"};
 
@@ -172,6 +186,9 @@ inline void draw(LovyanGFX* d, const State& s, const Fx& fx) {
   float shiver = 0;
   if (fx.now < fx.jitterUntil) shiver = sinf(fx.now * 0.09f) * 3.0f;
   if (fx.now < fx.hitUntil) shiver += sinf(fx.now * 0.12f) * 7.0f * (fx.hitUntil - fx.now) / 600.0f;
+  const bool priming = fx.primeUntil > fx.primeStart && fx.now >= fx.primeStart && fx.now < fx.primeUntil;
+  const float primeP = priming ? (float)(fx.now - fx.primeStart) / (fx.primeUntil - fx.primeStart) : 0.0f;
+  if (priming) shiver += sinf(fx.now * 0.15f) * (0.8f + 3.5f * primeP);   // trembling builds up
   const float sway = sinf(t * 1.3f) * (wilt ? 0.6f : 1.8f) + shiver;
 
   d->fillScreen(C(BG));
@@ -213,12 +230,40 @@ inline void draw(LovyanGFX* d, const State& s, const Fx& fx) {
     gLeaf[l.idx][variant]->pushRotateZoom(d, tx, ty, a, zoom * l.z, zoom * l.z, (uint16_t)LEAF_KEY);
   }
 
+  // build-up: ultrasonic ripples spread out from the stems, then the click sounds
+  if (priming) {
+    const int rx = (int)bx, ry = (int)by - 30;
+    const uint32_t ring = fx.primeCut ? 0xE0604A : 0xE8907A;
+    for (int k = 0; k < 3; ++k) {
+      float ph = primeP * 1.6f - k * 0.3f;
+      if (ph <= 0 || ph >= 1) continue;
+      int r = 8 + (int)(ph * 30);
+      uint32_t col = mix(ring, BG, ph * 0.7f);
+      d->drawArc(rx, ry, r, r - 2, -45, 45, C(col));
+      d->drawArc(rx, ry, r, r - 2, 135, 225, C(col));
+    }
+    // tiny sparkle that grows just before the sound
+    int sr = 1 + (int)(primeP * 3);
+    d->fillSmoothCircle(rx + 18, ry - 20, sr, C(mix(0xFAC775, BG, 1 - primeP)));
+    d->fillSmoothCircle(rx - 20, ry - 14, sr - 1 > 0 ? sr - 1 : 1, C(mix(0xFAC775, BG, 1 - primeP)));
+  }
+
   drawPot(d, cx, potTop, dry || hurt, wilt, hurt);
 
   // sweat drop when thirsty, droplets after watering
   if (dry && !wilt) {
     d->fillSmoothCircle(cx + 42, potTop - 4, 3, C(0x9CCFE8));
     d->fillTriangle(cx + 39, potTop - 5, cx + 45, potTop - 5, cx + 42, potTop - 11, C(0x9CCFE8));
+  }
+  if (fx.now < fx.remindUntil) {
+    float p = 1.0f - (float)(fx.remindUntil - fx.now) / 1600.0f;
+    float pulse = 0.5f + 0.5f * sinf(p * 6.2832f * 3);
+    int r = 5 + (int)(pulse * 3);
+    int x = cx - 44, y = potTop - 14;
+    uint32_t col = fx.remindUrgent ? 0x6FA8DC : 0x9CCFE8;
+    d->fillSmoothCircle(x, y, r, C(col));
+    d->fillTriangle(x - r + 1, y - 1, x + r - 1, y - 1, x, y - r - 6, C(col));
+    d->fillSmoothCircle(x - 2, y - 1, 1, C(0xFFFFFF));
   }
   if (fx.now < fx.waterUntil) {
     float k = (fx.waterUntil - fx.now) / 900.0f;
@@ -265,6 +310,7 @@ inline void draw(LovyanGFX* d, const State& s, const Fx& fx) {
       case BUBBLE_CUT:   bubbleAt(d, 94, 36, "咔哒! 好痛", CORAL); break;
       case BUBBLE_WATER: bubbleAt(d, 94, 36, "咕嘟咕嘟", 0x2F7F6A); break;
       case BUBBLE_INFO:  bubbleAt(d, 67, 36, fx.infoText ? fx.infoText : "", INK); break;
+      case BUBBLE_REMIND: bubbleAt(d, 67, 36, fx.remindUrgent ? "快浇水! 要蔫了" : "该浇水啦", 0x2F6FA0); break;
       default: break;
     }
   }

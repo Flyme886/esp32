@@ -7,6 +7,10 @@
 //   Side button  (BtnB)       click : fast-forward half a day
 //   Shake / knock the stick         : the plant gets hurt (real "cut" clicks)
 //   Side button  hold 1.5 s         : switch tomato / tobacco recordings
+//
+// Every click first shows a short build-up animation (trembling leaves and
+// ripples spreading from the stems), then the real click sound plays.
+// When the plant gets thirsty it chimes a "time to water" reminder.
 //   Front button hold 3 s           : start over
 
 #include <M5Unified.h>
@@ -22,18 +26,29 @@ static constexpr float    PEAK_CLICKS_SEC = 0.30f;   // click rate at the worst 
 static constexpr float    HIT_G           = 2.3f;    // acceleration that counts as a knock
 static constexpr uint32_t PLAYBACK_RATE   = 22050;   // 500 kHz recordings played ~23x slower
 static constexpr uint8_t  VOLUME          = 170;     // keep below ~75 % on battery
+static constexpr uint32_t PRIME_MS        = 450;     // build-up animation before a thirst click
+static constexpr uint32_t PRIME_CUT_MS    = 200;     // shorter build-up after a knock
+static constexpr uint32_t REMIND_MS       = 30000;   // repeat the water reminder while thirsty
+static constexpr uint32_t REMIND_URGENT_MS= 15000;   // ... and more often while wilting
 
 static M5Canvas canvas(&M5.Display);
 static Preferences prefs;
 static scene::State st;
 static scene::Fx fx;
 
-// pending sounds (bursts after fast-forward or a knock)
-struct Pending { uint32_t at; bool cut; };
+// pending clicks: each one first runs its build-up animation, then plays
+struct Pending { uint32_t at; bool cut; bool primed; };
 static Pending pending[16];
 static int pendingCount = 0;
 
+// short melodies (water reminder, watering done)
+struct Note { uint32_t at; uint16_t freq; uint16_t ms; };
+static Note notes[12];
+static int noteCount = 0;
+
 static uint32_t lastTick = 0, lastSave = 0, lastClickAt = 0, hitCooldownUntil = 0, bootAt = 0;
+static uint32_t nextRemindAt = 0;
+static bool wasThirsty = false;
 static bool resetArmed = true, switchArmed = true;
 
 static void resetState() {
@@ -84,15 +99,40 @@ static void playClick(bool cut) {
   fx.lastLen = c.len;
   fx.bubble = cut ? scene::BUBBLE_CUT : scene::BUBBLE_DRY;
   fx.bubbleUntil = now + 700;
-  fx.jitterUntil = now + 260;
+  fx.jitterUntil = now + 200;
   lastClickAt = now;
   Serial.printf("[click] %s %s\n", cut ? "cut" : "dry", st.soundSet ? "tobacco" : "tomato");
 }
 
 static void queueClick(uint32_t delayMs, bool cut) {
   if (pendingCount < (int)(sizeof(pending) / sizeof(pending[0]))) {
-    pending[pendingCount++] = {millis() + delayMs, cut};
+    pending[pendingCount++] = {millis() + delayMs, cut, false};
   }
+}
+
+static void playMelody(const uint16_t (*m)[2], int n, uint32_t startDelay = 0) {
+  uint32_t t = millis() + startDelay;
+  for (int i = 0; i < n && noteCount < (int)(sizeof(notes) / sizeof(notes[0])); ++i) {
+    notes[noteCount++] = {t, m[i][0], m[i][1]};
+    t += m[i][1] + 25;
+  }
+}
+
+// "time to water": a soft ding-dong; when wilting, a sadder falling three notes
+static const uint16_t kRemind[][2]       = {{1318, 130}, {1046, 200}};
+static const uint16_t kRemindUrgent[][2] = {{988, 140}, {784, 140}, {659, 240}};
+static const uint16_t kWatered[][2]      = {{1046, 70}, {1318, 70}, {1568, 120}};
+
+static void remindWater() {
+  bool urgent = st.water < 8;
+  if (urgent) playMelody(kRemindUrgent, 3); else playMelody(kRemind, 2);
+  uint32_t now = millis();
+  fx.remindUrgent = urgent;
+  fx.remindUntil = now + 1600;
+  fx.bubble = scene::BUBBLE_REMIND;
+  fx.bubbleUntil = now + 1600;
+  nextRemindAt = now + (urgent ? REMIND_URGENT_MS : REMIND_MS);
+  Serial.println(urgent ? "[remind] urgent" : "[remind]");
 }
 
 static void info(const char* text) {
@@ -120,7 +160,11 @@ static void waterPlant() {
   fx.bubbleUntil = now + 900;
   fx.waterUntil = now + 900;
   fx.lastClip = nullptr;
-  M5.Speaker.tone(1318, 90);
+  fx.remindUntil = 0;
+  fx.primeUntil = 0;
+  noteCount = 0;
+  playMelody(kWatered, 3);
+  wasThirsty = false;
   save();
   Serial.println("[water]");
 }
@@ -128,9 +172,9 @@ static void waterPlant() {
 static void knock() {
   uint32_t now = millis();
   st.health = fmaxf(0, st.health - 15);
-  fx.hitUntil = now + 600;
-  playClick(true);
-  queueClick(280, true);
+  fx.hitUntil = now + 600;      // the knock itself is the first animation
+  queueClick(0, true);
+  queueClick(320, true);
   hitCooldownUntil = now + 1500;
   save();
   Serial.println("[knock]");
@@ -173,14 +217,14 @@ void loop() {
   if (M5.BtnA.wasClicked()) waterPlant();
   if (M5.BtnA.pressedFor(3000) && resetArmed) {
     resetArmed = false;
-    resetState(); pendingCount = 0; save(); info("重新开始");
+    resetState(); pendingCount = 0; noteCount = 0; wasThirsty = false; save(); info("重新开始");
   }
   if (M5.BtnA.wasReleased()) resetArmed = true;
 
   if (M5.BtnB.wasClicked()) {
     advance(0.5f);
     int n = (int)roundf(thirstHump(st.water) * 4.0f + random(0, 100) / 100.0f * 0.6f);
-    for (int i = 0; i < n; ++i) queueClick(150 + i * 320, false);
+    for (int i = 0; i < n; ++i) queueClick(700 + i * 650, false);
     if (n == 0) info("快进半天");
     save();
   }
@@ -206,13 +250,36 @@ void loop() {
 
   // spontaneous thirst clicks
   float rate = PEAK_CLICKS_SEC * thirstHump(st.water);
-  if (rate > 0 && now - lastClickAt > 600 && random(0, 1000000) < rate * dt * 1000.0f) playClick(false);
+  if (rate > 0 && pendingCount == 0 && now - lastClickAt > 1200 && random(0, 1000000) < rate * dt * 1000.0f) queueClick(0, false);
 
-  // queued clicks
+  // queued clicks: start the build-up animation, then play the sound when it ends
   for (int i = 0; i < pendingCount;) {
-    if ((int32_t)(now - pending[i].at) >= 0) {
-      playClick(pending[i].cut);
+    Pending& p = pending[i];
+    if ((int32_t)(now - p.at) < 0 || (!p.primed && now < fx.primeUntil)) { ++i; continue; }
+    if (!p.primed) {
+      uint32_t len = p.cut ? PRIME_CUT_MS : PRIME_MS;
+      fx.primeStart = now;
+      fx.primeUntil = now + len;
+      fx.primeCut = p.cut;
+      p.primed = true;
+      p.at = now + len;
+      ++i;
+    } else {
+      playClick(p.cut);
       pending[i] = pending[--pendingCount];
+    }
+  }
+
+  // water reminder: once when the plant becomes thirsty, then repeated
+  bool thirsty = st.water < 30;
+  if (thirsty && (!wasThirsty || now >= nextRemindAt)) remindWater();
+  wasThirsty = thirsty;
+
+  // melody notes
+  for (int i = 0; i < noteCount;) {
+    if ((int32_t)(now - notes[i].at) >= 0) {
+      M5.Speaker.tone(notes[i].freq, notes[i].ms, -1, false);
+      notes[i] = notes[--noteCount];
     } else {
       ++i;
     }
