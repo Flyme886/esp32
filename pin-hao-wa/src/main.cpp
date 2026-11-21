@@ -311,6 +311,10 @@ void setup() {
   M5.Display.setBrightness(BRIGHT);
   M5.Speaker.begin();
   M5.Speaker.setVolume(VOLUME);
+  // AW8737A amp to Mode 3 (medium gain, 2 pulses) — louder than default without brownout reboots.
+  // Amp MODE pin is wired to PM1 coprocessor GPIO3 (0x6E @ I2C);
+  // register 0x53: [7]=refresh, [6:5]=pulse count, [4:0]=PM1 gpio number.
+  M5.In_I2C.writeRegister8(0x6E, 0x53, 0x80 | (2 << 5) | 0x03, 100000);
 
   canvas.setColorDepth(16);
   canvas.setPsram(true);
