@@ -15,12 +15,12 @@ static inline uint16_t C(uint32_t rgb) { return lgfx::color565(rgb >> 16, (rgb >
 static const uint32_t BG = 0xFFF4D6, LANE = 0xFBE7B5, CARD = 0xFFFFFF, INK = 0x6B4A1E, INK_SOFT = 0xA8885A;
 static const uint32_t ACCENT = 0xF2A93B, BLUE = 0x5A6FB8;
 
-static LGFX_Sprite* gIcon[3];
+static LGFX_Sprite* gIcon[game::KINDS];
 static LGFX_Sprite* gBig;
 static LGFX_Sprite* gOops;
 
 inline void init(LovyanGFX* parent) {
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < game::KINDS; ++i) {
     auto* s = new LGFX_Sprite(parent);
     s->setColorDepth(16);
     s->createSprite(WA_ICON, WA_ICON);
@@ -55,7 +55,7 @@ static void pill(LovyanGFX* d, int x, int y, int w, int h, uint32_t bg, uint32_t
 }
 
 static void icon(LovyanGFX* d, int tier, float x, float y, float zoom = 1.0f, float angle = 0) {
-  if (tier < 1 || tier > 3) return;
+  if (tier < 1 || tier > game::KINDS) return;
   gIcon[tier - 1]->pushRotateZoom(d, x, y, angle, zoom, zoom, (uint16_t)WA_KEY);
 }
 
@@ -99,7 +99,7 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
   const bool aiming = g.phase == game::IDLE;
   for (int c = 0; c < game::COLS; ++c) {
     int h = game::height(g, c);
-    bool merges = aiming && h > 0 && h < game::ROWS && g.grid[c][h - 1] == g.next;
+    bool merges = aiming && h > 0 && h < game::ROWS && game::canMerge(g.grid[c][h - 1], g.next);
     uint32_t lane = LANE;
     if (c == g.cursor && g.phase != game::OVER) lane = merges ? 0xD6EDB8 : 0xF9DC98;
     int sx = (c == g.fullCol && now < g.fullUntil) ? (int)(sinf(now * 0.08f) * 4) : 0;   // refused: shake
@@ -109,7 +109,7 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
   if (aiming) {
     int c = g.cursor, h = game::height(g, c);
     if (h < game::ROWS) {
-      bool merges = h > 0 && g.grid[c][h - 1] == g.next;
+      bool merges = h > 0 && game::canMerge(g.grid[c][h - 1], g.next);
       int x = colX(c) - 19, y = rowY(h) - 19;
       if (merges) {
         d->drawRoundRect(x, y, 38, 38, 10, C(0x6DB24A));

@@ -4,6 +4,9 @@
 //   Front button (BtnA) click : drop the baby
 //   Front button hold 3 s     : start over
 //
+// Troublemakers (三张捣乱图) sometimes come up as the next piece. They never merge,
+// and whenever one lands, or a baby lands on one, 熊大 says 轻松绷住.
+//
 // Shake the stick (three quick jolts) to clear the board straight away: "通关!".
 //
 // Small helps: the lane turns green and the landing spot gets a green frame when the
@@ -33,6 +36,7 @@ static constexpr int      LAUGH_CH      = 1;
 static constexpr int      OOPS_CH       = 2;
 static constexpr uint32_t LAUGH_REPEATS = 12;    // loops queued at once (about 28 s of a 2.3 s laugh)
 static constexpr int      LEVEL2_CHANCE = 15;    // % chance the next baby is already level 2
+static constexpr int      BLOCK_CHANCE  = 12;    // % chance the next piece is a troublemaker
 static constexpr uint32_t DIM_AFTER_MS  = 30000; // dim the screen when nobody plays
 static constexpr uint8_t  BRIGHT        = 150, DIM = 20;
 static constexpr float    SHAKE_G       = 1.9f;  // one jolt of a shake
@@ -71,7 +75,11 @@ static void startPhase(game::Phase p, uint32_t len) {
   g.phaseLen = len;
 }
 
-static void newNext() { g.next = (random(100) < LEVEL2_CHANCE) ? 2 : 1; }
+static void newNext() {
+  int r = random(100);
+  if (r < BLOCK_CHANCE) g.next = game::FIRST_BLOCK + random(3);
+  else g.next = (r < BLOCK_CHANCE + LEVEL2_CHANCE) ? 2 : 1;
+}
 
 static void addScore(int n, int col, int row) {
   g.score += n;
@@ -163,7 +171,7 @@ static void checkChain() {
     Serial.println("[level 3] laugh");
     return;
   }
-  if (r > 0 && g.grid[c][r - 1] == t) {
+  if (r > 0 && game::canMerge(g.grid[c][r - 1], t)) {
     g.grid[c][r] = 0;
     g.grid[c][r - 1] = t + 1;
     g.popRow = r - 1;
@@ -180,7 +188,7 @@ static void checkChain() {
 
 static void land() {
   int c = g.dropCol, r = g.dropRow, t = g.dropTier;
-  if (r > 0 && g.grid[c][r - 1] == t) {           // same baby below: merge
+  if (r > 0 && game::canMerge(g.grid[c][r - 1], t)) {   // same baby below: merge
     g.grid[c][r - 1] = t + 1;
     g.popCol = c; g.popRow = r - 1;
     g.combo = 1;
@@ -190,7 +198,7 @@ static void land() {
     Serial.printf("[merge] level %d\n", t + 1);
   } else {
     g.grid[c][r] = t;
-    if (r > 0) {                                     // different baby below
+    if (r > 0 || game::isBlock(t)) {                 // different one below, or a troublemaker
       g.toastStart = millis();
       g.toastUntil = g.toastStart + TOAST_MS;
       sndOops();

@@ -7,11 +7,15 @@ namespace game {
 static constexpr int COLS = 3;
 static constexpr int ROWS = 4;
 static constexpr int MAX_TIER = 3;
+static constexpr int FIRST_BLOCK = 4;   // 4, 5, 6 are troublemakers: they never merge
+static constexpr int KINDS = 6;
+inline bool isBlock(int t) { return t >= FIRST_BLOCK; }
+inline bool canMerge(int a, int b) { return a == b && a >= 1 && a < MAX_TIER; }
 
 enum Phase : uint8_t { IDLE, DROP, POP, CELEBRATE, OVER };
 
 struct State {
-  uint8_t grid[COLS][ROWS];   // 0 = empty, 1..3 = level; row 0 is the bottom
+  uint8_t grid[COLS][ROWS];   // 0 = empty, 1..3 = level, 4..6 = troublemaker; row 0 is the bottom
   int cursor;                 // column the next baby will drop into
   uint8_t next;               // level of the next baby
   uint32_t score, best;

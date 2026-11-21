@@ -5,6 +5,8 @@
     wa2.png    level 2
     wa3.png    level 3 (the big laugh)
     oops.png   shown when a baby lands on a different one ("轻松绷住")
+    block1.png, block2.png, block3.png
+               troublemakers: they turn up at random, never merge, and trigger 轻松绷住
     laugh.wav  looped while level 3 is on screen
                (or laugh.mp4 / .mov / .mp3: seconds 1-4 are cut out, needs ffmpeg)
     oops.wav   played with the 熊大 picture
@@ -97,11 +99,13 @@ def to_array(name, img):
     return lines
 
 
-def rounded_square(path, size, radius):
+def rounded_square(path, size, radius, top_bias=0.5):
+    """Square crop with rounded corners. top_bias < 0.5 keeps more of the top of a tall picture (faces)."""
     im = Image.open(path).convert("RGB")
     side = min(im.size)
-    im = im.crop(((im.width - side) // 2, (im.height - side) // 2,
-                  (im.width - side) // 2 + side, (im.height - side) // 2 + side)).resize((size, size), Image.LANCZOS)
+    x0 = (im.width - side) // 2
+    y0 = int((im.height - side) * top_bias)
+    im = im.crop((x0, y0, x0 + side, y0 + side)).resize((size, size), Image.LANCZOS)
     mask = Image.new("L", (size, size), 0)
     from PIL import ImageDraw
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, size - 1, size - 1), radius=radius, fill=255)
@@ -111,7 +115,8 @@ def rounded_square(path, size, radius):
 
 
 def build_sprites():
-    files = [LOCAL / f"wa{i}.png" for i in (1, 2, 3)] + [LOCAL / "oops.png"]
+    files = [LOCAL / f"wa{i}.png" for i in (1, 2, 3)] + [LOCAL / "oops.png"] + \
+            [LOCAL / f"block{i}.png" for i in (1, 2, 3)]
     missing = [f.name for f in files if not f.exists()]
     if missing:
         sys.exit("missing in assets/source: " + ", ".join(missing))
@@ -124,7 +129,10 @@ def build_sprites():
         lines += to_array(f"wa_icon_{i}", fit(c, ICON))
     lines += to_array("wa_big_3", fit(cuts[2], BIG))
     lines += to_array("wa_oops", rounded_square(files[3], OOPS, 14))
-    lines.append("static const uint16_t* const wa_icons[3] = {wa_icon_1, wa_icon_2, wa_icon_3};")
+    for i, f in enumerate(files[4:], 1):
+        lines += to_array(f"wa_block_{i}", rounded_square(f, ICON, 9, top_bias=0.2))
+    lines.append("// levels 1-3, then the three troublemakers (4-6)")
+    lines.append("static const uint16_t* const wa_icons[6] = {wa_icon_1, wa_icon_2, wa_icon_3, wa_block_1, wa_block_2, wa_block_3};")
     (OUT / "sprites.h").write_text("\n".join(lines) + "\n")
     print("wrote src/assets/sprites.h")
 
