@@ -4,6 +4,11 @@
 //   Front button (BtnA) click : drop the baby
 //   Front button hold 3 s     : start over
 //
+// Small helps: the lane turns green and the landing spot gets a green frame when the
+// next baby would merge there; a full column shakes instead of ending the game (only a
+// completely full board ends it); chains show "连击"; a new best shows "新纪录!";
+// the screen dims after 30 s and the first press only wakes it.
+//
 // Drop a baby onto the same baby and they merge into the next level.
 // Drop it onto a different one and 熊大 pops up: "轻松绷住".
 // Reaching level 3 fills the screen with the big laugh and loops the laugh sound
@@ -15,17 +20,19 @@
 #include "scene.hpp"
 
 #include "assets/laugh.h"            // the laugh, cut from seconds 1-4 of the video
-#include "assets/oops_sound.h"       // "轻松绷住", cut from seconds 3-4 of the second video
+#include "assets/oops_sound.h"       // "轻松绷住", cut from seconds 3-4.5 of the second video
 
 static constexpr uint8_t  VOLUME        = 180;   // keep below ~75 % on battery
 static constexpr uint32_t DROP_MS_ROW   = 75;    // fall time per row
 static constexpr uint32_t POP_MS        = 320;
-static constexpr uint32_t TOAST_MS      = 1600;
+static constexpr uint32_t TOAST_MS      = 1900;  // a little longer than the 1.5 s sound
 static constexpr uint32_t CELEBRATE_MAX = 20000; // stop the laugh loop after 20 s if nobody presses
 static constexpr int      LAUGH_CH      = 1;
 static constexpr int      OOPS_CH       = 2;
 static constexpr uint32_t LAUGH_REPEATS = 12;    // loops queued at once (about 28 s of a 2.3 s laugh)
 static constexpr int      LEVEL2_CHANCE = 15;    // % chance the next baby is already level 2
+static constexpr uint32_t DIM_AFTER_MS  = 30000; // dim the screen when nobody plays
+static constexpr uint8_t  BRIGHT        = 150, DIM = 20;
 
 static M5Canvas canvas(&M5.Display);
 static Preferences prefs;
@@ -50,6 +57,8 @@ static void sndOops() {   // 轻松绷住
   M5.Speaker.playRaw(oops_pcm, sizeof(oops_pcm) / sizeof(oops_pcm[0]), OOPS_RATE, false, 1, OOPS_CH, true);
 }
 static void sndOver()  { melody({{392, 150}, {330, 150}, {262, 300}}); }
+static void sndFull()  { melody({{220, 70}, {220, 70}}); }   // column is full, try another
+static void sndRecord(){ melody({{1568, 70}, {2093, 120}}, 250); }
 
 static void startPhase(game::Phase p, uint32_t len) {
   g.phase = p;
@@ -61,7 +70,11 @@ static void newNext() { g.next = (random(100) < LEVEL2_CHANCE) ? 2 : 1; }
 
 static void addScore(int n, int col, int row) {
   g.score += n;
-  if (g.score > g.best) { g.best = g.score; prefs.putUInt("best", g.best); }
+  if (g.score > g.best) {
+    if (!g.recordShown && g.best > 0) { g.recordShown = true; g.recordUntil = millis() + 1500; sndRecord(); }
+    g.best = g.score;
+    prefs.putUInt("best", g.best);
+  }
   g.gain = n; g.gainCol = col; g.gainRow = row; g.gainUntil = millis() + 700;
 }
 
@@ -76,12 +89,20 @@ static void restart() {
 static void drop() {
   int c = g.cursor;
   int h = game::height(g, c);
-  if (h >= game::ROWS) {              // column already full
-    startPhase(game::OVER, 0);
-    sndOver();
-    Serial.println("[game over]");
+  if (h >= game::ROWS) {              // column already full: refuse, the player picks another
+    if (game::boardFull(g)) {
+      startPhase(game::OVER, 0);
+      sndOver();
+      Serial.println("[game over]");
+    } else {
+      g.fullCol = c;
+      g.fullUntil = millis() + 400;
+      sndFull();
+    }
     return;
   }
+  g.tutorial = false;
+  g.combo = 0;
   g.dropCol = c; g.dropRow = h; g.dropTier = g.next;
   startPhase(game::DROP, DROP_MS_ROW * (game::ROWS - h) + 60);
   sndDrop();
@@ -104,12 +125,15 @@ static void checkChain() {
     g.grid[c][r] = 0;
     g.grid[c][r - 1] = t + 1;
     g.popRow = r - 1;
+    g.combo++;
+    g.comboUntil = millis() + 900;
     addScore(t + 1 == 3 ? 3 : 1, c, r - 1);
     sndPop(t + 1);
     startPhase(game::POP, POP_MS);
     return;
   }
   startPhase(game::IDLE, 0);
+  if (game::boardFull(g)) { startPhase(game::OVER, 0); sndOver(); }
 }
 
 static void land() {
@@ -117,6 +141,7 @@ static void land() {
   if (r > 0 && g.grid[c][r - 1] == t) {           // same baby below: merge
     g.grid[c][r - 1] = t + 1;
     g.popCol = c; g.popRow = r - 1;
+    g.combo = 1;
     addScore(t + 1 == 3 ? 3 : 1, c, r - 1);
     sndPop(t + 1);
     startPhase(game::POP, POP_MS);
@@ -129,6 +154,7 @@ static void land() {
       sndOops();
       Serial.println("[mismatch] 轻松绷住");
     }
+    if (game::boardFull(g)) { startPhase(game::OVER, 0); sndOver(); Serial.println("[game over]"); return; }
     startPhase(game::IDLE, 0);
   }
 }
@@ -141,7 +167,7 @@ void setup() {
   cfg.internal_mic = false;
   M5.begin(cfg);
   if (M5.Display.width() > M5.Display.height()) M5.Display.setRotation(M5.Display.getRotation() ^ 1);
-  M5.Display.setBrightness(150);
+  M5.Display.setBrightness(BRIGHT);
   M5.Speaker.begin();
   M5.Speaker.setVolume(VOLUME);
 
@@ -160,6 +186,26 @@ void loop() {
   M5.update();
   const uint32_t now = millis();
   static bool holdArmed = true;
+  static uint32_t lastInput = 0;
+  static bool dimmed = false;
+
+  // dim after a while; the first press only wakes the screen
+  bool anyPress = M5.BtnA.wasPressed() || M5.BtnB.wasPressed();
+  if (anyPress) lastInput = now;
+  if (dimmed) {
+    if (anyPress) {
+      dimmed = false;
+      M5.Display.setBrightness(BRIGHT);
+      while (M5.BtnA.isPressed() || M5.BtnB.isPressed()) { M5.update(); delay(10); }
+      M5.update();
+    }
+    delay(30);
+    return;
+  }
+  if (g.phase != game::CELEBRATE && now - lastInput > DIM_AFTER_MS) {
+    dimmed = true;
+    M5.Display.setBrightness(DIM);
+  }
 
   if (M5.BtnA.pressedFor(3000) && holdArmed) { holdArmed = false; restart(); }
   if (M5.BtnA.wasReleased()) holdArmed = true;

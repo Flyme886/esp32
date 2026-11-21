@@ -34,8 +34,22 @@ struct State {
   int gain;
   int gainCol, gainRow;
   uint32_t gainUntil;
+
+  bool tutorial;              // show the controls until the first drop
+  int fullCol;                // column that refused a drop (it shakes)
+  uint32_t fullUntil;
+  int combo;                  // merges in a row from one drop
+  uint32_t comboUntil;
+  bool recordShown;           // "新纪录!" shown once per game
+  uint32_t recordUntil;
 };
 
+inline bool boardFull(const State& s) {
+  for (int c = 0; c < COLS; ++c) if (s.grid[c][ROWS - 1] == 0) return false;
+  return true;
+}
+
+inline bool boardFull(const State& s);
 inline int height(const State& s, int c) {
   int h = 0;
   while (h < ROWS && s.grid[c][h]) ++h;
@@ -53,6 +67,13 @@ inline void reset(State& s, uint32_t best) {
   s.toastStart = s.toastUntil = 0;
   s.gain = 0;
   s.gainUntil = 0;
+  s.tutorial = true;
+  s.fullCol = -1;
+  s.fullUntil = 0;
+  s.combo = 0;
+  s.comboUntil = 0;
+  s.recordShown = false;
+  s.recordUntil = 0;
 }
 
 }  // namespace game

@@ -94,10 +94,32 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
   snprintf(buf, sizeof(buf), "最高 %lu", (unsigned long)g.best);
   pill(d, W - 66, 3, 62, 17, CARD, INK_SOFT, buf);
 
-  // lanes
+  // lanes: the current one is highlighted, green when the next baby would merge there
+  const bool aiming = g.phase == game::IDLE;
   for (int c = 0; c < game::COLS; ++c) {
-    uint32_t lane = (c == g.cursor && g.phase != game::OVER) ? 0xF9DC98 : LANE;
-    d->fillSmoothRoundRect(colX(c) - 21, rowY(game::ROWS - 1) - 22, 42, 43 * game::ROWS + 1, 12, C(lane));
+    int h = game::height(g, c);
+    bool merges = aiming && h > 0 && h < game::ROWS && g.grid[c][h - 1] == g.next;
+    uint32_t lane = LANE;
+    if (c == g.cursor && g.phase != game::OVER) lane = merges ? 0xD6EDB8 : 0xF9DC98;
+    int sx = (c == g.fullCol && now < g.fullUntil) ? (int)(sinf(now * 0.08f) * 4) : 0;   // refused: shake
+    d->fillSmoothRoundRect(colX(c) - 21 + sx, rowY(game::ROWS - 1) - 22, 42, 43 * game::ROWS + 1, 12, C(lane));
+  }
+  // where the baby will land: green frame = merge, dashed grey frame = no merge
+  if (aiming) {
+    int c = g.cursor, h = game::height(g, c);
+    if (h < game::ROWS) {
+      bool merges = h > 0 && g.grid[c][h - 1] == g.next;
+      int x = colX(c) - 19, y = rowY(h) - 19;
+      if (merges) {
+        d->drawRoundRect(x, y, 38, 38, 10, C(0x6DB24A));
+        d->drawRoundRect(x + 1, y + 1, 36, 36, 9, C(0x6DB24A));
+      } else {
+        for (int i = 0; i < 38; i += 6) {
+          d->drawFastHLine(x + i, y, 3, C(0xC9B48A)); d->drawFastHLine(x + i, y + 37, 3, C(0xC9B48A));
+          d->drawFastVLine(x, y + i, 3, C(0xC9B48A)); d->drawFastVLine(x + 37, y + i, 3, C(0xC9B48A));
+        }
+      }
+    }
   }
 
   // babies on the board
@@ -149,6 +171,24 @@ inline void draw(LovyanGFX* d, const game::State& g, uint32_t now) {
     d->setTextDatum(textdatum_t::middle_center);
     d->drawString(buf, colX(g.gainCol), rowY(g.gainRow) - 24 - (int)(p * 14));
   }
+
+  // chain merges
+  if (now < g.comboUntil && g.combo >= 2) {
+    snprintf(buf, sizeof(buf), "连击 x%d", g.combo);
+    pill(d, W / 2 - 34, 90, 68, 20, 0xE07B1F, 0xFFFFFF, buf);
+  }
+
+  // first-time hint
+  if (g.tutorial && g.phase == game::IDLE) {
+    d->fillSmoothRoundRect(8, 120, W - 16, 42, 12, C(CARD));
+    d->setTextColor(C(INK));
+    d->setTextDatum(textdatum_t::middle_center);
+    d->drawString("侧键 换列", W / 2, 132);
+    d->drawString("正键 下落", W / 2, 150);
+  }
+
+  // new best score
+  if (now < g.recordUntil) pill(d, 30, 3, 75, 17, 0xE07B1F, 0xFFFFFF, "新纪录!");
 
   // "轻松绷住": the bear pops up (the picture already carries the words) with a little shake
   if (now < g.toastUntil) {

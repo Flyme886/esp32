@@ -8,7 +8,7 @@
     laugh.wav  looped while level 3 is on screen
                (or laugh.mp4 / .mov / .mp3: seconds 1-4 are cut out, needs ffmpeg)
     oops.wav   played with the 熊大 picture
-               (or oops.mp4 / .mov / .mp3: seconds 3-4 are cut out, needs ffmpeg)
+               (or oops.mp4 / .mov / .mp3: seconds 3-4.5 are cut out, needs ffmpeg)
 
 Run from the pin-hao-wa folder:
 
@@ -39,7 +39,7 @@ OOPS = 112                   # "轻松绷住" picture size
 LAUGH_RATE = 16000
 LAUGH_MAX_S = 4.0
 VIDEO_CUT = (1.0, 4.0)       # laugh from a video or mp3: use seconds 1-4 of it
-OOPS_CUT = (3.0, 4.0)        # 轻松绷住 sound from a video or mp3: seconds 3-4
+OOPS_CUT = (3.0, 4.5)        # 轻松绷住 sound from a video or mp3: seconds 3-4.5
 
 
 def rgb565(r, g, b):
